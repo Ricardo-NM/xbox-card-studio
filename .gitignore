@@ -1,0 +1,43 @@
+# Environment variables & secrets (CRÍTICO: previene fugas en Git)
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+
+# Production & Build outputs
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Tooling & Caches
+.vite/
+.cache/
+.eslintcache/
+coverage/
+
+# OS metadata & Editor directories
+.DS_Store
+Thumbs.db
+desktop.ini
+
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
