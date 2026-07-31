@@ -74,10 +74,14 @@ export default function App() {
     setIsLoading(true);
     try {
       const result = await authenticateAndFetchXboxProfile(msAccessToken);
-      setProfile(result.data);
-      setIsLiveApi(true);
-      setIsLoggedIn(true);
-      setApiSource(result.source);
+      if (result && result.success && result.data) {
+        setProfile(result.data);
+        setIsLiveApi(true);
+        setIsLoggedIn(true);
+        setApiSource(result.source || "Xbox Live OAuth Oficial");
+      } else {
+        throw new Error(result?.error || "No se pudo obtener la información del perfil");
+      }
     } catch (err) {
       console.error("Error in Xbox Live OAuth authentication:", err);
       alert(

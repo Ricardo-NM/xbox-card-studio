@@ -101,12 +101,11 @@ export async function exchangeAuthCodeForToken(code, clientId = getAzureClientId
 }
 
 export async function authenticateAndFetchXboxProfile(msAccessToken) {
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const useProxy = !isLocal && isProduction;
+  const API_BASE = '/api';
 
   try {
     // 1. USER TOKEN
-    const userAuthUrl = useProxy ? `${API_BASE}/xbox/user-authenticate` : 'https://user.auth.xboxlive.com/user/authenticate';
+    const userAuthUrl = `${API_BASE}/xbox/user-authenticate`;
     const userAuthRes = await fetch(userAuthUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -124,7 +123,7 @@ export async function authenticateAndFetchXboxProfile(msAccessToken) {
     if (!userToken || !uhs) throw new Error('No se pudo obtener el User Token');
 
     // 2. XSTS TOKEN
-    const xstsAuthUrl = useProxy ? `${API_BASE}/xbox/xsts-authorize` : 'https://xsts.auth.xboxlive.com/xsts/authorize';
+    const xstsAuthUrl = `${API_BASE}/xbox/xsts-authorize`;
     const xstsRes = await fetch(xstsAuthUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -143,7 +142,7 @@ export async function authenticateAndFetchXboxProfile(msAccessToken) {
     const xblAuthHeader = `XBL3.0 x=${uhs};${xstsToken}`;
 
     // 3. PROFILE
-    const profileUrl = useProxy ? `${API_BASE}/xbox/profile` : 'https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,GameDisplayPicRaw,Gamerscore,RealName,AccountTier,UniqueModernGamertag';
+    const profileUrl = `${API_BASE}/xbox/profile`;
     const profileRes = await fetch(profileUrl, {
       headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
     });
@@ -169,7 +168,7 @@ export async function authenticateAndFetchXboxProfile(msAccessToken) {
     let friendsCount = 0, followersCount = 0, totalFollowersCount = 0, summaryFriendCount = 0;
 
     try {
-      const summaryUrl = useProxy ? `${API_BASE}/xbox/social-summary` : 'https://social.xboxlive.com/users/me/summary';
+      const summaryUrl = `${API_BASE}/xbox/social-summary`;
       const summaryRes = await fetch(summaryUrl, {
         headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
       });
@@ -181,7 +180,7 @@ export async function authenticateAndFetchXboxProfile(msAccessToken) {
     } catch (e) { devLog('Social summary error:', e.message); }
 
     try {
-      const peopleUrl = useProxy ? `${API_BASE}/xbox/people` : 'https://social.xboxlive.com/users/me/people';
+      const peopleUrl = `${API_BASE}/xbox/people`;
       const socialRes = await fetch(peopleUrl, {
         headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
       });
@@ -200,7 +199,7 @@ export async function authenticateAndFetchXboxProfile(msAccessToken) {
     // 5. TITLEHUB - JUEGOS RECIENTES
     let recentGames = [];
     try {
-      const titleUrl = useProxy ? `${API_BASE}/xbox/titlehub/${xuid}` : `https://titlehub.xboxlive.com/users/xuid(${xuid})/titles/titlehistory/decoration/detail?maxItems=10`;
+      const titleUrl = `${API_BASE}/xbox/titlehub/${xuid}`;
       const titleRes = await fetch(titleUrl, {
         headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
       });

@@ -7,36 +7,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
+      '/api': {
+        target: 'http://localhost:3002',
+        changeOrigin: true,
+      },
       '/ms-auth': {
         target: 'https://login.live.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ms-auth/, ''),
       },
-      '/xbox-user-auth': {
-        target: 'https://user.auth.xboxlive.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/xbox-user-auth/, ''),
-      },
-      '/xbox-xsts-auth': {
-        target: 'https://xsts.auth.xboxlive.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/xbox-xsts-auth/, ''),
-      },
-      '/xbox-profile-api': {
-        target: 'https://profile.xboxlive.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/xbox-profile-api/, ''),
-      },
-      '/xbox-social-api': {
-        target: 'https://social.xboxlive.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/xbox-social-api/, ''),
-      },
-      '/xbox-titlehub-api': {
-        target: 'https://titlehub.xboxlive.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/xbox-titlehub-api/, ''),
-      }
     },
   },
 })

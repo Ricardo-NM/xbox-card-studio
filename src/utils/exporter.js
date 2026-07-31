@@ -13,10 +13,17 @@ export async function downloadCardAsJpeg(node, gamertag = 'xbox-gamer') {
     // Generate JPEG with maximum quality and 1080x1920 scale
     const dataUrl = await toJpeg(node, {
       quality: 0.95,
+      width: 1080,
+      height: 1920,
       canvasWidth: 1080,
       canvasHeight: 1920,
       pixelRatio: 1,
       cacheBust: true,
+      style: {
+        transform: 'none',
+        transformOrigin: 'initial',
+        margin: '0',
+      },
       filter: (domNode) => {
         // Exclude non-essential elements if any
         return true;
