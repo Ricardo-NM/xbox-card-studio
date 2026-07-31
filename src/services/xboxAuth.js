@@ -2,6 +2,12 @@ const getAzureClientId = () => {
   return (import.meta.env.VITE_AZURE_CLIENT_ID || '').trim();
 };
 
+const isProduction = import.meta.env.MODE === 'production';
+const API_BASE = isProduction ? '/api' : '';
+
+// Solo logs en desarrollo
+const devLog = isProduction ? () => {} : console.log;
+
 function generateCodeVerifier() {
   const array = new Uint8Array(32);
   window.crypto.getRandomValues(array);
@@ -94,247 +100,144 @@ export async function exchangeAuthCodeForToken(code, clientId = getAzureClientId
   }
 }
 
-/**
- * 100% PURE DYNAMIC OFFICIAL XBOX LIVE API FETCHING
- */
 export async function authenticateAndFetchXboxProfile(msAccessToken) {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  
-  // 1. Get Xbox User Token
-  const userAuthUrl = isLocal ? '/xbox-user-auth/user/authenticate' : 'https://user.auth.xboxlive.com/user/authenticate';
-  const userAuthRes = await fetch(userAuthUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify({
-      Properties: {
-        AuthMethod: 'RPS',
-        SiteName: 'user.auth.xboxlive.com',
-        RpsTicket: `d=${msAccessToken}`
-      },
-      RelyingParty: 'http://auth.xboxlive.com',
-      TokenType: 'JWT'
-    })
-  });
+  const useProxy = !isLocal && isProduction;
 
-  if (!userAuthRes.ok) {
-    throw new Error(`Error de autenticación Xbox User Token (${userAuthRes.status})`);
-  }
-
-  const userAuthJson = await userAuthRes.json();
-  const userToken = userAuthJson.Token;
-  const uhs = userAuthJson.DisplayClaims?.xui?.[0]?.uhs;
-
-  if (!userToken || !uhs) {
-    throw new Error('No se pudo obtener el User Token de Xbox');
-  }
-
-  // 2. Get XSTS Token
-  const xstsAuthUrl = isLocal ? '/xbox-xsts-auth/xsts/authorize' : 'https://xsts.auth.xboxlive.com/xsts/authorize';
-  const xstsRes = await fetch(xstsAuthUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify({
-      Properties: {
-        SandboxId: 'RETAIL',
-        UserTokens: [userToken]
-      },
-      RelyingParty: 'http://xboxlive.com',
-      TokenType: 'JWT'
-    })
-  });
-
-  if (!xstsRes.ok) {
-    throw new Error(`Error al obtener XSTS Token (${xstsRes.status})`);
-  }
-
-  const xstsJson = await xstsRes.json();
-  const xstsToken = xstsJson.Token;
-
-  // 3. Query Official Xbox Live Profile API
-  const xblAuthHeader = `XBL3.0 x=${uhs};${xstsToken}`;
-  const profileUrl = isLocal 
-    ? '/xbox-profile-api/users/me/profile/settings?settings=Gamertag,GameDisplayPicRaw,Gamerscore,RealName,AccountTier,UniqueModernGamertag'
-    : 'https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,GameDisplayPicRaw,Gamerscore,RealName,AccountTier,UniqueModernGamertag';
-
-  const profileRes = await fetch(profileUrl, {
-    headers: {
-      'Authorization': xblAuthHeader,
-      'x-xbl-contract-version': '2',
-      'Accept': 'application/json'
-    }
-  });
-
-  if (!profileRes.ok) {
-    throw new Error(`Error consultando perfil Xbox (${profileRes.status})`);
-  }
-
-  const profileJson = await profileRes.json();
-  const userObj = profileJson.profileUsers?.[0];
-  const xuid = userObj?.id;
-
-  const settingsMap = {};
-  if (userObj?.settings) {
-    userObj.settings.forEach(s => {
-      settingsMap[s.id] = s.value;
-    });
-  }
-
-  const gamertag = settingsMap['UniqueModernGamertag'] || settingsMap['Gamertag'] || userObj?.id || 'Gamer Xbox';
-  const realName = settingsMap['RealName'] || gamertag;
-  const avatarUrl = settingsMap['GameDisplayPicRaw'] || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80';
-  const gamerscore = parseInt(settingsMap['Gamerscore'] || '0', 10);
-  const tier = settingsMap['AccountTier'] || 'Game Pass Ultimate';
-
-  // 4. UNIVERSAL SOCIAL GRAPH CALCULATION
-  let friendsCount = 0;
-  let followersCount = 0;
-
-  let totalFollowersCount = 0;
-  let summaryFriendCount = 0;
-
-  // Step A: Fetch Summary
   try {
-    const summaryUrl = isLocal ? '/xbox-social-api/users/me/summary' : 'https://social.xboxlive.com/users/me/summary';
-    const summaryRes = await fetch(summaryUrl, {
-      headers: {
-        'Authorization': xblAuthHeader,
-        'x-xbl-contract-version': '2',
-        'Accept': 'application/json'
-      }
+    // 1. USER TOKEN
+    const userAuthUrl = useProxy ? `${API_BASE}/xbox/user-authenticate` : 'https://user.auth.xboxlive.com/user/authenticate';
+    const userAuthRes = await fetch(userAuthUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `d=${msAccessToken}` },
+        RelyingParty: 'http://auth.xboxlive.com',
+        TokenType: 'JWT'
+      })
     });
 
-    if (summaryRes.ok) {
-      const summaryJson = await summaryRes.json();
-      if (summaryJson.targetFriendCount !== undefined) {
-        summaryFriendCount = summaryJson.targetFriendCount;
-      }
-      if (summaryJson.targetFollowerCount !== undefined) {
-        totalFollowersCount = summaryJson.targetFollowerCount;
-      }
+    if (!userAuthRes.ok) throw new Error(`Error User Token (${userAuthRes.status})`);
+    const userAuthJson = await userAuthRes.json();
+    const userToken = userAuthJson.Token;
+    const uhs = userAuthJson.DisplayClaims?.xui?.[0]?.uhs;
+    if (!userToken || !uhs) throw new Error('No se pudo obtener el User Token');
+
+    // 2. XSTS TOKEN
+    const xstsAuthUrl = useProxy ? `${API_BASE}/xbox/xsts-authorize` : 'https://xsts.auth.xboxlive.com/xsts/authorize';
+    const xstsRes = await fetch(xstsAuthUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        Properties: { SandboxId: 'RETAIL', UserTokens: [userToken] },
+        RelyingParty: 'http://xboxlive.com',
+        TokenType: 'JWT'
+      })
+    });
+
+    if (!xstsRes.ok) throw new Error(`Error XSTS Token (${xstsRes.status})`);
+    const xstsJson = await xstsRes.json();
+    const xstsToken = xstsJson.Token;
+    if (!xstsToken) throw new Error('No se pudo obtener el XSTS Token');
+
+    const xblAuthHeader = `XBL3.0 x=${uhs};${xstsToken}`;
+
+    // 3. PROFILE
+    const profileUrl = useProxy ? `${API_BASE}/xbox/profile` : 'https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,GameDisplayPicRaw,Gamerscore,RealName,AccountTier,UniqueModernGamertag';
+    const profileRes = await fetch(profileUrl, {
+      headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
+    });
+
+    if (!profileRes.ok) throw new Error(`Error perfil (${profileRes.status})`);
+    const profileJson = await profileRes.json();
+    const userObj = profileJson.profileUsers?.[0];
+    const xuid = userObj?.id;
+    if (!xuid) throw new Error('No se pudo obtener el XUID');
+
+    const settingsMap = {};
+    if (userObj?.settings) {
+      userObj.settings.forEach(s => { settingsMap[s.id] = s.value; });
     }
-  } catch (e) {
-    console.warn('Error fetching live social summary:', e);
-  }
 
-  // Step B: Fetch People Endpoint for Exact Mutual Friends
-  try {
-    const socialUrl = isLocal ? '/xbox-social-api/users/me/people' : 'https://social.xboxlive.com/users/me/people';
-    const socialRes = await fetch(socialUrl, {
-      headers: {
-        'Authorization': xblAuthHeader,
-        'x-xbl-contract-version': '2',
-        'Accept': 'application/json'
+    const gamertag = settingsMap['UniqueModernGamertag'] || settingsMap['Gamertag'] || 'Gamer';
+    const realName = settingsMap['RealName'] || gamertag;
+    const avatarUrl = settingsMap['GameDisplayPicRaw'] || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80';
+    const gamerscore = parseInt(settingsMap['Gamerscore'] || '0', 10);
+    const tier = settingsMap['AccountTier'] || 'Game Pass Ultimate';
+
+    // 4. SOCIAL GRAPH
+    let friendsCount = 0, followersCount = 0, totalFollowersCount = 0, summaryFriendCount = 0;
+
+    try {
+      const summaryUrl = useProxy ? `${API_BASE}/xbox/social-summary` : 'https://social.xboxlive.com/users/me/summary';
+      const summaryRes = await fetch(summaryUrl, {
+        headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
+      });
+      if (summaryRes.ok) {
+        const summaryJson = await summaryRes.json();
+        if (summaryJson.targetFriendCount !== undefined) summaryFriendCount = summaryJson.targetFriendCount;
+        if (summaryJson.targetFollowerCount !== undefined) totalFollowersCount = summaryJson.targetFollowerCount;
       }
-    });
+    } catch (e) { devLog('Social summary error:', e.message); }
 
-    if (socialRes.ok) {
-      const socialJson = await socialRes.json();
-      const people = socialJson.people || [];
-      
-      // Amigos = Mutual Friends (accounts where BOTH follow each other)
-      const mutualFriends = people.filter(p => p.isFollowedByCaller && p.isFollowingCaller);
-      friendsCount = mutualFriends.length;
-
-      if (totalFollowersCount === 0) {
-        totalFollowersCount = people.filter(p => p.isFollowingCaller).length;
+    try {
+      const peopleUrl = useProxy ? `${API_BASE}/xbox/people` : 'https://social.xboxlive.com/users/me/people';
+      const socialRes = await fetch(peopleUrl, {
+        headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
+      });
+      if (socialRes.ok) {
+        const socialJson = await socialRes.json();
+        const people = socialJson.people || [];
+        const mutualFriends = people.filter(p => p.isFollowedByCaller && p.isFollowingCaller);
+        friendsCount = mutualFriends.length;
+        if (totalFollowersCount === 0) totalFollowersCount = people.filter(p => p.isFollowingCaller).length;
       }
-    }
-  } catch (err) {
-    console.warn('Error fetching people endpoint:', err);
-  }
+    } catch (e) { devLog('People error:', e.message); }
 
-  if (friendsCount === 0 && summaryFriendCount > 0) {
-    friendsCount = summaryFriendCount;
-  }
+    if (friendsCount === 0 && summaryFriendCount > 0) friendsCount = summaryFriendCount;
+    followersCount = Math.max(0, totalFollowersCount - friendsCount);
 
-  // Followers = Total Followers minus Mutual Friends
-  followersCount = Math.max(0, totalFollowersCount - friendsCount);
-
-  // 5. Query Official TitleHub API for Recent Games (Ordered chronologically by last played date)
-  let recentGames = [];
-  try {
-    const titleUrl = isLocal
-      ? `/xbox-titlehub-api/users/xuid(${xuid})/titles/titlehistory/decoration/detail?maxItems=10`
-      : `https://titlehub.xboxlive.com/users/xuid(${xuid})/titles/titlehistory/decoration/detail?maxItems=10`;
-
-    const titleRes = await fetch(titleUrl, {
-      headers: {
-        'Authorization': xblAuthHeader,
-        'x-xbl-contract-version': '2',
-        'Accept': 'application/json'
-      }
-    });
-
-    if (titleRes.ok) {
-      const titleJson = await titleRes.json();
-      const titles = titleJson.titles || [];
-
-      // Accept all game titles as shown in the official Xbox App!
-      const validGames = titles.filter(t => {
-        if (!t.name && !t.titleName) return false;
-        if (t.type && t.type !== 'Game') return false;
-        return true;
+    // 5. TITLEHUB - JUEGOS RECIENTES
+    let recentGames = [];
+    try {
+      const titleUrl = useProxy ? `${API_BASE}/xbox/titlehub/${xuid}` : `https://titlehub.xboxlive.com/users/xuid(${xuid})/titles/titlehistory/decoration/detail?maxItems=10`;
+      const titleRes = await fetch(titleUrl, {
+        headers: { 'Authorization': xblAuthHeader, 'x-xbl-contract-version': '2', 'Accept': 'application/json' }
       });
 
-      const sortedGames = validGames.sort((a, b) => {
-        const timeA = new Date(a.titleHistory?.lastTimePlayed || a.lastUnlock || 0).getTime();
-        const timeB = new Date(b.titleHistory?.lastTimePlayed || b.lastUnlock || 0).getTime();
-        return timeB - timeA;
-      });
-
-      recentGames = sortedGames.slice(0, 3).map((t, idx) => ({
-        id: String(t.titleId || idx + 1),
-        title: t.name || t.titleName || `Juego ${idx + 1}`,
-        coverUrl: t.displayImage || t.displayImageUrl || t.tileImage || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=300&q=80'
-      }));
-    } else {
-      const meTitleUrl = isLocal
-        ? '/xbox-titlehub-api/users/me/titles/titlehistory/decoration/detail?maxItems=10'
-        : 'https://titlehub.xboxlive.com/users/me/titles/titlehistory/decoration/detail?maxItems=10';
-
-      const meTitleRes = await fetch(meTitleUrl, {
-        headers: {
-          'Authorization': xblAuthHeader,
-          'x-xbl-contract-version': '2',
-          'Accept': 'application/json'
-        }
-      });
-
-      if (meTitleRes.ok) {
-        const meTitleJson = await meTitleRes.json();
-        const titles = meTitleJson.titles || [];
-        const validGames = titles.filter(t => t.name || t.titleName);
-        recentGames = validGames.slice(0, 3).map((t, idx) => ({
-          id: String(t.titleId || idx + 1),
-          title: t.name || t.titleName || `Juego ${idx + 1}`,
-          coverUrl: t.displayImage || t.displayImageUrl || t.tileImage
-        }));
+      if (titleRes.ok) {
+        const titleJson = await titleRes.json();
+        const titles = titleJson.titles || [];
+        const validGames = titles.filter(t => (t.name || t.titleName) && (!t.type || t.type === 'Game'));
+        const sortedGames = validGames.sort((a, b) => {
+          const timeA = new Date(a.titleHistory?.lastTimePlayed || a.lastUnlock || 0).getTime();
+          const timeB = new Date(b.titleHistory?.lastTimePlayed || b.lastUnlock || 0).getTime();
+          return timeB - timeA;
+        });
+	recentGames = sortedGames.slice(0, 3).map((t, idx) => ({
+  id: String(t.titleId || idx + 1),
+  title: t.name || t.titleName || `Juego ${idx + 1}`,
+  // Forzar HTTPS en las URLs de las imágenes
+  coverUrl: (t.displayImage || t.displayImageUrl || t.tileImage || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=300&q=80')
+    .replace(/^http:/, 'https:')
+}));
       }
-    }
-  } catch (err) {
-    console.warn('Error fetching TitleHub history:', err);
-  }
+    } catch (e) { devLog('TitleHub error:', e.message); }
 
-  return {
-    success: true,
-    data: {
-      gamertag,
-      realName,
-      avatarUrl,
-      gamerpic: avatarUrl,
-      gamerscore,
-      friendsCount,
-      followersCount,
-      tier: tier === 'Gold' ? 'Xbox Live Gold' : 'Game Pass Ultimate',
-      status: 'En línea',
-      recentGames
-    },
-    source: 'Xbox Live OAuth (Oficial Microsoft)'
-  };
+    return {
+      success: true,
+      data: { gamertag, realName, avatarUrl, gamerpic: avatarUrl, gamerscore, friendsCount, followersCount, tier: tier === 'Gold' ? 'Xbox Live Gold' : 'Game Pass Ultimate', status: 'En línea', recentGames }
+    };
+
+  } catch (error) {
+    console.error('Error en autenticación:', error);
+    return { success: false, error: error.message || 'Error desconocido' };
+  }
 }
+
+export default {
+  getMicrosoftLoginUrl,
+  parseTokenOrCodeFromUrl,
+  exchangeAuthCodeForToken,
+  authenticateAndFetchXboxProfile
+};
